@@ -1,0 +1,23 @@
+.sidebar-layout {
+    height: 100vh;
+}
+
+.sidebar {
+    background: #343a40;
+    color: white;
+    padding: 20px;
+}
+
+.sidebar .nav-link {
+    color: white;
+    margin-bottom: 10px;
+    transition: background-color 0.3s ease;
+}
+
+.sidebar .nav-link:hover {
+    background-color: #495057;
+}
+
+.main-content {
+    padding: 20px;
+}

@@ -1,0 +1,34 @@
+body {
+  font-family: Arial, sans-serif;
+}
+
+header {
+  background: #333;
+  color: #fff;
+  padding: 1rem;
+}
+
+nav ul {
+  list-style: none;
+  padding: 0;
+}
+
+nav ul li {
+  display: inline;
+  margin-right: 1rem;
+}
+
+nav ul li a {
+  color: #fff;
+  text-decoration: none;
+}
+
+.homepage {
+  text-align: center;
+  margin-top: 2rem;
+}
+
+.homepage button {
+  padding: 0.5rem 1rem;
+  font-size: 1rem;
+}
