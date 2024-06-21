@@ -1,0 +1,25 @@
+hen you enter data into the computer via keyboard, each keyed element is encoded by the electronics within the keyboard into an equivalent binary coded pattern based on one of the standard coding schemes that are used for the interchange of information
+ASCII - American Standard Code for Information Interchange
+EBCDIC- Extended Binary Coded Decimal (EBCDIC) 
+To represent all characters of the keyboard, a unique pattern of 7 or 8 bits in size is used. 
+Use of 7 bits  128 different elements 
+Use of 8 bits  256 can be represented
+A similar procedure is followed at the receiver that decodes every received binary pattern into the corresponding character.
+
+There are two major techniques for transmitting signals over cables  
+
+Baseband (dedicated) 
+Broadband (shared) transmissions. 
+
+Baseband transmission is used to transmit a single digital signal over a single communication channel. 
+Discrete pulses of the single frequency 
+It allows several devices connected to a network to interact by sending and receiving data on a single communication channel shared by all the devices (TDM). 
+Hence, it helps in utilizing the channel’s full bandwidth.
+In essence, the data communication channel is not shared with anyone but solely used for the single signal. 
+
+Broadband Transmission
+Multiple signals of different frequencies are simultaneously sent through a single communication channel
+A broadband RF signal has a wider bandwidth than a baseband signal
+With the available bandwidth, multiple analog transmissions can be accommodated simultaneously, with each of them assigned specific channels or frequency to operate
+
+For simultaneous signals transmission, two channels are needed, one to transmit and the other to receive 

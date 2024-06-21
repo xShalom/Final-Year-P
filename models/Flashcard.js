@@ -1,21 +1,16 @@
-import db from '../db.js'; // Make sure the path and file extension are correct
+import { DataTypes } from 'sequelize';
 
-const createFlashcardTable = () => {
-  db.prepare(`
-    CREATE TABLE IF NOT EXISTS flashcards (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      question TEXT NOT NULL,
-      answer TEXT NOT NULL
-    )
-  `).run();
+const Flashcard = (sequelize) => {
+  return sequelize.define('Flashcard', {
+    question: {
+      type: DataTypes.STRING,
+      allowNull: false,
+    },
+    answer: {
+      type: DataTypes.STRING,
+      allowNull: false,
+    },
+  });
 };
 
-const insertFlashcard = (question, answer) => {
-  db.prepare('INSERT INTO flashcards (question, answer) VALUES (?, ?)').run(question, answer);
-};
-
-const getAllFlashcards = () => {
-  return db.prepare('SELECT * FROM flashcards').all();
-};
-
-export { createFlashcardTable, insertFlashcard, getAllFlashcards };
+export default Flashcard;

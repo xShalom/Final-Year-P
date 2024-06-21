@@ -6,9 +6,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import cors from 'cors';
-import { createFlashcardTable, insertFlashcard, getAllFlashcards } from './models/Flashcard.js';
+import pdfParse from 'pdf-parse';
+import officeparser from 'officeparser';
+import db from './models/index.js';
 
-// Load environment variables from .env file
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
@@ -18,6 +19,7 @@ const app = express();
 const port = 5000;
 
 app.use(cors());
+app.use(express.json());
 
 const upload = multer({ dest: 'uploads/' });
 
@@ -25,15 +27,16 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Create Flashcards Table
-createFlashcardTable();
+db.sequelize.sync().then(() => {
+  console.log('Database synced');
+}).catch((error) => {
+  console.error('Error syncing database:', error);
+});
 
-// Define a simple GET route for the root URL
 app.get('/', (req, res) => {
   res.send('Server is running');
 });
 
-// Retry logic with exponential backoff
 const retryWithBackoff = async (fn, retries = 5, delay = 1000) => {
   try {
     return await fn();
@@ -48,10 +51,8 @@ const retryWithBackoff = async (fn, retries = 5, delay = 1000) => {
 };
 
 app.post('/api/upload', upload.single('file'), async (req, res) => {
-  // Print out information about the uploaded file for debugging
   console.log('File information:', req.file);
 
-  // Check if file is uploaded and is of valid type
   const allowedTypes = ['text/plain', 'application/pdf', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'];
   if (!req.file || !allowedTypes.includes(req.file.mimetype)) {
     console.log('Invalid file type or no file uploaded');
@@ -61,32 +62,63 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
 
   try {
     const filePath = path.join(__dirname, 'uploads', req.file.filename);
-    const fileContent = fs.readFileSync(filePath, 'utf-8');
+    let fileContent = '';
+
+    if (req.file.mimetype === 'application/pdf') {
+      const dataBuffer = fs.readFileSync(filePath);
+      const pdfData = await pdfParse(dataBuffer);
+      fileContent = pdfData.text;
+    } else if (req.file.mimetype === 'application/vnd.openxmlformats-officedocument.presentationml.presentation') {
+      const pptData = await new Promise((resolve, reject) => {
+        officeparser.parsePpt(filePath, (data, err) => {
+          if (err) {
+            reject(new Error('Error parsing PPTX file'));
+          } else {
+            resolve(data.map(slide => slide.text).join('\n'));
+          }
+        });
+      });
+      fileContent = pptData;
+    } else {
+      fileContent = fs.readFileSync(filePath, 'utf-8');
+    }
+
     console.log('File content read successfully.');
 
-    // Use OpenAI API to generate flashcards from fileContent
     const response = await retryWithBackoff(() =>
-      openai.completions.create({
+      openai.chat.completions.create({
         model: 'gpt-3.5-turbo',
-        prompt: `Generate flashcards with questions and answers from the following text:\n\n${fileContent}`,
+        messages: [
+          { role: 'system', content: 'You are a helpful assistant that generates flashcards.' },
+          { role: 'user', content: `Generate flashcards with questions and answers from the following text. Each question and answer should be formatted as "Question 1: ..." and "Answer 1: ...". Please ensure the format is strictly followed.\n\n${fileContent}` }
+        ],
         max_tokens: 1000,
       })
     );
     console.log('OpenAI API request successful.');
 
-    const flashcards = response.choices[0].text.trim().split('\n\n').map((flashcard) => {
-      const [question, answer] = flashcard.split('\n');
-      return { question: question.replace('Q: ', ''), answer: answer.replace('A: ', '') };
-    });
-    console.log('Flashcards generated successfully.');
+    const messageContent = response.choices[0]?.message?.content.trim();
+    if (!messageContent) {
+      throw new Error('Received empty response from OpenAI API');
+    }
 
-    // Save flashcards to the database
-    flashcards.forEach(({ question, answer }) => {
-      insertFlashcard(question, answer);
-    });
+    console.log('Response from OpenAI:', messageContent);
 
-    fs.unlinkSync(filePath); // Clean up the uploaded file
-    console.log('Uploaded file cleaned up successfully.');
+    const flashcards = [];
+    const regex = /Question\s*\d+:\s*(.*?)\s*Answer\s*\d+:\s*([\s\S]*?)(?=Question\s*\d+:|$)/g;
+    let match;
+
+    while ((match = regex.exec(messageContent)) !== null) {
+      const question = match[1].trim();
+      const answer = match[2].trim().replace(/\n/g, '<br>');
+      flashcards.push({ question, answer });
+    }
+
+    console.log('Parsed flashcards:', flashcards);
+
+    if (flashcards.length === 0) {
+      throw new Error('No flashcards were generated. Please check the file content.');
+    }
 
     res.json({ flashcards });
   } catch (error) {
@@ -101,13 +133,59 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
   }
 });
 
-app.get('/api/flashcards', (req, res) => {
+app.post('/api/flashcards/save', async (req, res) => {
+  const { name, flashcards } = req.body;
+
   try {
-    const flashcards = getAllFlashcards();
-    res.json(flashcards);
+    const flashcardSet = await db.FlashcardSet.create({ name });
+
+    const flashcardPromises = flashcards.map(({ question, answer }) => {
+      return db.Flashcard.create({ question, answer, flashcardSetId: flashcardSet.id });
+    });
+
+    await Promise.all(flashcardPromises);
+
+    console.log('Flashcards saved successfully.');
+    res.status(200).json({ message: 'Flashcards saved successfully.' });
   } catch (error) {
-    console.error('Error retrieving flashcards:', error);
-    res.status(500).json({ error: 'Error retrieving flashcards', details: error.message });
+    console.error('Error saving flashcards:', error);
+    res.status(500).json({ error: 'Error saving flashcards', details: error.message });
+  }
+});
+
+app.get('/api/flashcards', async (req, res) => {
+  try {
+    const flashcardSets = await db.FlashcardSet.findAll({
+      include: {
+        model: db.Flashcard,
+        as: 'flashcards'
+      }
+    });
+    res.json(flashcardSets);
+  } catch (error) {
+    console.error('Error retrieving flashcard sets:', error);
+    res.status(500).json({ error: 'Error retrieving flashcard sets', details: error.message });
+  }
+});
+
+app.get('/api/flashcards/:setId', async (req, res) => {
+  const { setId } = req.params;
+  try {
+    const flashcardSet = await db.FlashcardSet.findByPk(setId, {
+      include: {
+        model: db.Flashcard,
+        as: 'flashcards'
+      }
+    });
+
+    if (!flashcardSet) {
+      return res.status(404).json({ error: 'Flashcard set not found' });
+    }
+
+    res.json(flashcardSet);
+  } catch (error) {
+    console.error('Error retrieving flashcard set:', error);
+    res.status(500).json({ error: 'Error retrieving flashcard set', details: error.message });
   }
 });
 
